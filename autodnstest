@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+
+# Framework for automating DNS reconnaissance
+# Get the Domain
+dns_recon() {
+	local record_type=$1
+	local result=$(dig +short "$record_type" "$domain")
+	if [ -n "$result" ]; then
+		echo "$result"
+	else
+		echo "No $record_type records found."
+	fi
+}
+# Record_type holds type DNS A=ip add MX=mail server NS=name server
+# Result uses dig command. +short gives just answer 
+# Do recon using function
+check_zone_transfer() {
+	echo "Attemting DNS zone transfer from $1 ..."
+	dig axfr "$domain" @"$1" +noall +answer || echo "Zone transfer failed or not allowed"
+}
+# Axfr checks zone transfer a misconfigured Dns can expose sensitive info.
+# +noall suppresses output, +answer shows just that section.
+# Run as loop with each name server
+subdomainbrute() {
+		#read -p "[*] Enter name or path of wordlist: " wordlist
+		echo "Looking for subdomains for $domain ..."
+		for sub in $(cat $wordlist);			
+			do dig any $sub.$domain | grep -v ';\|SOA'| sed -r '/^\s*$/d'
+			echo -ne "trying $sub\033[0K\r"	
+		done
+	}
+# Scan with nmap TODO
+# Run WhatWeb gives server info/configs
+# The -a set scan aggression level. 1 more stealth 4 heavy requests
+run_whatweb() {
+		output_time=wwrecon$(date +'%m-%d-%Y-%H%M')
+		echo "Gathering intel via WhatWeb on $domain ..."
+		touch $output_time
+		# Custom user agent obcures detection
+		USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+		local wwsearch=$(whatweb -a 3 --user-agent "$USER_AGENT" --log-brief=$output_time "$domain")
+		#> wwrecon.txt
+		echo "WhatWeb has found intel. Report saved." 
+		echo $wwsearch
+}
+search4ips() {
+	echo "-------------------------------------------------------------------------------"
+	echo "grep $output_time for IP addresses...."
+	grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" "$output_time"
+	echo "IP addresses found."
+}
+recon_help() {
+	echo "DNS Testing Tool. Requires dig, whatweb"
+	echo "-d domain.com # DNS info with dig"
+	echo "-bf example.com wordlist.txt # test subdomains"
+	echo "-v example.com # whatweb test"
+	echo "-h # this help menu"
+	echo "usage: autodnstest -d google.com"
+}
+base_scan () {
+	#read -p "[*] Enter the domain: " domain
+	echo "---------------------------------------------------------"
+	echo "[*] IP address is:"
+	IP=$(dns_recon "A")
+	echo "$IP"
+	echo "----------------------------------------------------------"
+	echo "[*] MX servers:"
+	MX=$(dns_recon "MX")
+	echo "$MX"
+	echo "-----------------------------------------------------------"
+	echo "[*] NS servers:"
+	NS=$(dns_recon "NS")
+	echo "$NS"
+	echo "-----------------------------------------------------------"
+		for ns in $NS; do 
+			check_zone_transfer "$ns"
+			echo "-------------------------------------------------------------"
+		done
+}
+if [ $# -gt 0 ]; then
+	case $1 in
+		-d) domain=$2
+		    echo "Testing $domain..."
+		    base_scan;;
+		-bf) domain=$2
+		     wordlist=$3
+		     echo "Testing $domain with $wordlist ..."
+		     subdomainbrute ;;
+		-h) recon_help ;;
+		-v) domain=$2
+		    base_scan
+		    run_whatweb
+		    search4ips ;;
+		
+	esac
+else
+		recon_help
+fi
+echo "------------------------------------------------------------------"
+
+
+
