@@ -91,10 +91,14 @@ if [ $# -gt 0 ]; then
 		    base_scan
 		    run_whatweb
 		    search4ips ;;
-		
+		 *) domain=$1
+	            echo "[*] IP address is:"
+		    dns_recon "A" 
+		    
 	esac
 else
 		recon_help
+			
 fi
 echo "------------------------------------------------------------------"
 
